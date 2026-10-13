@@ -28,15 +28,36 @@ function isHttpUrl(s: unknown): s is string {
   }
 }
 
+const RESERVED = new Set(["api", "healthz", "version"]);
+
 app.post("/api/links", async (c) => {
   const body = await c.req.json().catch(() => null);
-  const url = body && typeof body === "object" ? (body as { url?: unknown }).url : undefined;
+  const b = (body && typeof body === "object" ? body : {}) as { url?: unknown; slug?: unknown; permanent?: unknown };
+  const { url } = b;
   if (!isHttpUrl(url)) return c.json({ error: "url must be an absolute http or https URL" }, 400);
+  if (b.permanent !== undefined && typeof b.permanent !== "boolean") {
+    return c.json({ error: "permanent must be a boolean" }, 400);
+  }
+  const permanent = b.permanent ? 1 : 0;
+  const origin = new URL(c.req.url).origin;
+  if (b.slug !== undefined) {
+    const slug = b.slug;
+    if (typeof slug !== "string" || !/^[A-Za-z0-9_-]{3,32}$/.test(slug) || RESERVED.has(slug.toLowerCase())) {
+      return c.json({ error: "invalid slug" }, 400);
+    }
+    const res = await c.env.DB.prepare("INSERT OR IGNORE INTO links (slug, url, permanent) VALUES (?, ?, ?)")
+      .bind(slug, url, permanent)
+      .run();
+    if (res.meta.changes !== 1) return c.json({ error: "slug already exists" }, 409);
+    return c.json({ slug, url, short_url: `${origin}/${slug}` }, 201);
+  }
   for (let i = 0; i < 5; i++) {
     const slug = genSlug();
-    const res = await c.env.DB.prepare("INSERT OR IGNORE INTO links (slug, url) VALUES (?, ?)").bind(slug, url).run();
+    const res = await c.env.DB.prepare("INSERT OR IGNORE INTO links (slug, url, permanent) VALUES (?, ?, ?)")
+      .bind(slug, url, permanent)
+      .run();
     if (res.meta.changes === 1) {
-      return c.json({ slug, url, short_url: `${new URL(c.req.url).origin}/${slug}` }, 201);
+      return c.json({ slug, url, short_url: `${origin}/${slug}` }, 201);
     }
   }
   return c.json({ error: "could not allocate slug" }, 500);
@@ -116,12 +137,12 @@ app.get("/api/links/:slug", async (c) => {
 });
 
 app.get("/:slug", async (c) => {
-  const row = await c.env.DB.prepare("SELECT url FROM links WHERE slug = ?")
+  const row = await c.env.DB.prepare("SELECT url, permanent FROM links WHERE slug = ?")
     .bind(c.req.param("slug"))
-    .first<{ url: string }>();
+    .first<{ url: string; permanent: number }>();
   if (!row) return c.text("not found", 404);
   await c.env.DB.prepare("UPDATE links SET hits = hits + 1 WHERE slug = ?").bind(c.req.param("slug")).run();
-  return new Response(null, { status: 302, headers: { Location: row.url } });
+  return new Response(null, { status: row.permanent ? 301 : 302, headers: { Location: row.url } });
 });
 
 export default app;
