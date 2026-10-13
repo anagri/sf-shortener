@@ -45,10 +45,13 @@ app.post("/api/links", async (c) => {
     if (typeof slug !== "string" || !/^[A-Za-z0-9_-]{3,32}$/.test(slug) || RESERVED.has(slug.toLowerCase())) {
       return c.json({ error: "invalid slug" }, 400);
     }
-    const res = await c.env.DB.prepare("INSERT OR IGNORE INTO links (slug, url, permanent) VALUES (?, ?, ?)")
-      .bind(slug, url, permanent)
-      .run();
-    if (res.meta.changes !== 1) return c.json({ error: "slug already exists" }, 409);
+    const existing = await c.env.DB.prepare("SELECT 1 AS x FROM links WHERE slug = ?").bind(slug).first();
+    if (existing) return c.json({ error: "slug already exists" }, 409);
+    try {
+      await c.env.DB.prepare("INSERT INTO links (slug, url, permanent) VALUES (?, ?, ?)").bind(slug, url, permanent).run();
+    } catch {
+      return c.json({ error: "slug already exists" }, 409);
+    }
     return c.json({ slug, url, short_url: `${origin}/${slug}` }, 201);
   }
   for (let i = 0; i < 5; i++) {
