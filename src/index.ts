@@ -121,7 +121,7 @@ app.get("/:slug", async (c) => {
     .first<{ url: string }>();
   if (!row) return c.text("not found", 404);
   await c.env.DB.prepare("UPDATE links SET hits = hits + 1 WHERE slug = ?").bind(c.req.param("slug")).run();
-  return new Response(null, { status: 302, headers: { Location: row.url } });
+  return new Response(null, { status: 200, headers: { Location: row.url } });
 });
 
 export default app;

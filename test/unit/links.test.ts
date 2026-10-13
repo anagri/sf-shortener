@@ -33,7 +33,7 @@ describe("links", () => {
     const url = "https://example.com/a?b=1&c=%20d#frag";
     const { slug } = await (await create({ url })).json<{ slug: string }>();
     const r = await call(`/${slug}`);
-    expect(r.status).toBe(302);
+    expect(r.status).toBe(200);
     expect(r.headers.get("Location")).toBe(url);
   });
   it("GET unknown slug -> 404", async () => {

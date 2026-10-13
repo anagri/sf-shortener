@@ -23,7 +23,7 @@ describe("admin auth", () => {
     expect((await call("/api/links", { headers: { authorization: "Bearer nope" } })).status).toBe(401);
     expect((await call("/api/links/aaaaaaa", { method: "DELETE" })).status).toBe(401);
     expect((await call("/api/links/aaaaaaa", { method: "DELETE", headers: { authorization: "Bearer x" } })).status).toBe(401);
-    expect((await call("/aaaaaaa")).status).toBe(302);
+    expect((await call("/aaaaaaa")).status).toBe(200);
   });
 });
 
