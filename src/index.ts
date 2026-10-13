@@ -41,11 +41,35 @@ app.post("/api/links", async (c) => {
   return c.json({ error: "could not allocate slug" }, 500);
 });
 
+async function digest(s: string): Promise<Uint8Array> {
+  return new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)));
+}
+
+async function tokenOk(header: string | undefined, expected: string | undefined): Promise<boolean> {
+  const m = /^Bearer (.+)$/.exec(header ?? "");
+  const [a, b] = await Promise.all([digest(m ? m[1] : ""), digest(expected ?? "")]);
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0 && !!m && !!expected;
+}
+
+app.get("/api/links/:slug", async (c) => {
+  if (!(await tokenOk(c.req.header("Authorization"), c.env.ADMIN_TOKEN))) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+  const row = await c.env.DB.prepare("SELECT slug, url, hits, created_at FROM links WHERE slug = ?")
+    .bind(c.req.param("slug"))
+    .first();
+  if (!row) return c.json({ error: "not found" }, 404);
+  return c.json(row);
+});
+
 app.get("/:slug", async (c) => {
   const row = await c.env.DB.prepare("SELECT url FROM links WHERE slug = ?")
     .bind(c.req.param("slug"))
     .first<{ url: string }>();
   if (!row) return c.text("not found", 404);
+  await c.env.DB.prepare("UPDATE links SET hits = hits + 1 WHERE slug = ?").bind(c.req.param("slug")).run();
   return new Response(null, { status: 302, headers: { Location: row.url } });
 });
 
