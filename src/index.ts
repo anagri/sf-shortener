@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { createMiddleware } from "hono/factory";
 
 export type Bindings = { DB: D1Database; ASSETS: Fetcher; BUILD_SHA: string; ADMIN_TOKEN?: string };
 const app = new Hono<{ Bindings: Bindings }>();
@@ -52,6 +53,56 @@ async function tokenOk(header: string | undefined, expected: string | undefined)
   for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
   return diff === 0 && !!m && !!expected;
 }
+
+const admin = createMiddleware<{ Bindings: Bindings }>(async (c, next) => {
+  if (!(await tokenOk(c.req.header("Authorization"), c.env.ADMIN_TOKEN))) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+  await next();
+});
+
+app.get("/api/links", admin, async (c) => {
+  const limitRaw = c.req.query("limit");
+  let limit = 20;
+  if (limitRaw !== undefined) {
+    if (!/^\d+$/.test(limitRaw)) return c.json({ error: "invalid limit" }, 400);
+    limit = Number(limitRaw);
+    if (limit < 1 || limit > 100) return c.json({ error: "invalid limit" }, 400);
+  }
+  const cursorRaw = c.req.query("cursor");
+  let after: { t: string; r: number } | null = null;
+  if (cursorRaw) {
+    try {
+      const v = JSON.parse(atob(cursorRaw.replace(/-/g, "+").replace(/_/g, "/")));
+      if (typeof v.t !== "string" || !Number.isInteger(v.r)) throw new Error("bad");
+      after = v;
+    } catch {
+      return c.json({ error: "invalid cursor" }, 400);
+    }
+  }
+  const base = "SELECT rowid AS rid, slug, url, hits, created_at FROM links";
+  const order = " ORDER BY created_at DESC, rowid DESC LIMIT ?";
+  const stmt = after
+    ? c.env.DB.prepare(`${base} WHERE created_at < ? OR (created_at = ? AND rowid < ?)${order}`).bind(after.t, after.t, after.r, limit + 1)
+    : c.env.DB.prepare(`${base}${order}`).bind(limit + 1);
+  const { results } = await stmt.all<{ rid: number; slug: string; url: string; hits: number; created_at: string }>();
+  const page = results.slice(0, limit);
+  let next_cursor: string | null = null;
+  if (results.length > limit) {
+    const last = page[page.length - 1];
+    next_cursor = btoa(JSON.stringify({ t: last.created_at, r: last.rid })).replace(/\+/g, "-").replace(/\//g, "_");
+  }
+  return c.json({
+    links: page.map(({ slug, url, hits, created_at }) => ({ slug, url, hits, created_at })),
+    next_cursor,
+  });
+});
+
+app.delete("/api/links/:slug", admin, async (c) => {
+  const res = await c.env.DB.prepare("DELETE FROM links WHERE slug = ?").bind(c.req.param("slug")).run();
+  if (res.meta.changes === 0) return c.json({ error: "not found" }, 404);
+  return c.body(null, 204);
+});
 
 app.get("/api/links/:slug", async (c) => {
   if (!(await tokenOk(c.req.header("Authorization"), c.env.ADMIN_TOKEN))) {
