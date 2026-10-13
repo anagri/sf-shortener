@@ -44,3 +44,29 @@ describe("links", () => {
     expect(await (await call("/version")).text()).toBe("dev");
   });
 });
+
+describe("link stats", () => {
+  const auth = { authorization: "Bearer test-admin-token" };
+  it("counts redirects atomically", async () => {
+    const { slug } = await (await create({ url: "https://example.com/s" })).json<{ slug: string }>();
+    await Promise.all(Array.from({ length: 10 }, () => call(`/${slug}`)));
+    const r = await call(`/api/links/${slug}`, { headers: auth });
+    expect(r.status).toBe(200);
+    const j = await r.json<{ slug: string; url: string; hits: number; created_at: string }>();
+    expect(j.slug).toBe(slug);
+    expect(j.url).toBe("https://example.com/s");
+    expect(j.hits).toBe(10);
+    expect(typeof j.created_at).toBe("string");
+  });
+  it("does not count unknown slugs and returns 404", async () => {
+    expect((await call("/zzzzzzz")).status).toBe(404);
+    expect((await call("/api/links/zzzzzzz", { headers: auth })).status).toBe(404);
+  });
+  it("requires the admin token", async () => {
+    const { slug } = await (await create({ url: "https://example.com/t" })).json<{ slug: string }>();
+    expect((await call(`/api/links/${slug}`)).status).toBe(401);
+    expect((await call(`/api/links/${slug}`, { headers: { authorization: "Bearer wrong" } })).status).toBe(401);
+    expect((await call(`/api/links/${slug}`, { headers: { authorization: "test-admin-token" } })).status).toBe(401);
+    expect((await call("/api/links/zzzzzzz")).status).toBe(401);
+  });
+});
