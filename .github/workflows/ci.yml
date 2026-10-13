@@ -1,0 +1,59 @@
+name: ci
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+  guard:
+    name: guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: governance and migration guard
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          HAS_SPEC_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'sf:spec') }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" != "pull_request" ]; then echo "push to main: guard not applicable"; exit 0; fi
+          git diff --name-status "origin/${BASE_REF}...HEAD" > /tmp/changes.txt
+          cat /tmp/changes.txt
+          bad=0
+          while IFS=$'\t' read -r st p1 p2; do
+            for p in "$p1" ${p2:+"$p2"}; do
+              case "$p" in
+                docs/SPEC.md)
+                  if [ "$HAS_SPEC_LABEL" != "true" ]; then echo "::error::$p requires label sf:spec"; bad=1; fi ;;
+                CLAUDE.md|AGENTS.md|.github/*)
+                  echo "::error::governance file touched: $p"; bad=1 ;;
+                migrations/*)
+                  if [ "${st:0:1}" != "A" ] && git cat-file -e "origin/${BASE_REF}:$p" 2>/dev/null; then
+                    echo "::error::existing migration modified: $p ($st)"; bad=1; fi ;;
+                wrangler.jsonc)
+                  if git diff "origin/${BASE_REF}...HEAD" -- wrangler.jsonc \
+                       | grep -Eq '^[+-][[:space:]]*"(name|database_id|database_name|build|route|routes|account_id)"'; then
+                    echo "::error::wrangler.jsonc Worker name, D1 target, build or route changed"; bad=1; fi ;;
+              esac
+            done
+          done < /tmp/changes.txt
+          exit $bad
