@@ -35,6 +35,11 @@ app.post("/api/links", async (c) => {
   const b = (body && typeof body === "object" ? body : {}) as { url?: unknown; slug?: unknown; permanent?: unknown };
   const { url } = b;
   if (!isHttpUrl(url)) return c.json({ error: "url must be an absolute http or https URL" }, 400);
+  if (url.length > 2048) return c.json({ error: "url must be at most 2048 characters" }, 400);
+  const host = (h: string) => h.toLowerCase().replace(/\.$/, "");
+  if (host(new URL(url).hostname) === host(new URL(c.req.url).hostname)) {
+    return c.json({ error: "url must not point at the shortener itself" }, 400);
+  }
   if (b.permanent !== undefined && typeof b.permanent !== "boolean") {
     return c.json({ error: "permanent must be a boolean" }, 400);
   }
