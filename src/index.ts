@@ -154,4 +154,15 @@ app.get("/:slug", async (c) => {
   return new Response(null, { status: row.permanent ? 301 : 302, headers: { Location: row.url } });
 });
 
+app.notFound((c) => {
+  const path = new URL(c.req.url).pathname;
+  if (path.startsWith("/api/")) {
+    if (/^\/api\/links\/?$/.test(path) || /^\/api\/links\/[^/]+\/?$/.test(path)) {
+      return c.json({ error: "method not allowed" }, 405);
+    }
+    return c.json({ error: "not found" }, 404);
+  }
+  return c.text("404 Not Found", 404);
+});
+
 export default app;
