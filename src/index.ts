@@ -5,8 +5,14 @@ export type Bindings = { DB: D1Database; ASSETS: Fetcher; BUILD_SHA: string; ADM
 const app = new Hono<{ Bindings: Bindings }>();
 
 app.get("/", (c) => c.env.ASSETS.fetch(new Request(new URL("/index.html", c.req.url))));
-app.get("/healthz",(c) => c.text("ok"));
-app.get("/version", (c) => c.text(c.env.BUILD_SHA || "dev"));
+app.get("/healthz", (c) => {
+  c.header("Cache-Control", "no-store");
+  return c.text("ok");
+});
+app.get("/version", (c) => {
+  c.header("Cache-Control", "no-store");
+  return c.text(c.env.BUILD_SHA || "dev");
+});
 
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
