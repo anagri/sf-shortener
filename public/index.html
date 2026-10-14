@@ -1,5 +1,42 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><title>sf-shortener</title></head>
-<body><h1>sf-shortener</h1></body>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>sf-shortener</title>
+</head>
+<body>
+<h1>sf-shortener</h1>
+<form data-testid="shorten-form" id="shorten-form" method="post" action="/api/links">
+  <input type="text" name="url" data-testid="url-input" placeholder="https://example.com/long/url" required>
+  <button type="submit" data-testid="shorten-submit">Shorten</button>
+</form>
+<p id="result" data-testid="shorten-result" role="status"></p>
+<script>
+document.getElementById("shorten-form").addEventListener("submit", async function (e) {
+  e.preventDefault();
+  var out = document.getElementById("result");
+  out.textContent = "";
+  try {
+    var r = await fetch("/api/links", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url: this.elements.url.value })
+    });
+    var j = await r.json();
+    if (r.ok) {
+      var a = document.createElement("a");
+      a.href = j.short_url;
+      a.textContent = j.short_url;
+      a.setAttribute("data-testid", "short-url");
+      out.appendChild(a);
+    } else {
+      out.textContent = j.error || "Error";
+    }
+  } catch (err) {
+    out.textContent = "Request failed";
+  }
+});
+</script>
+</body>
 </html>

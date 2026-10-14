@@ -4,7 +4,8 @@ import { createMiddleware } from "hono/factory";
 export type Bindings = { DB: D1Database; ASSETS: Fetcher; BUILD_SHA: string; ADMIN_TOKEN?: string };
 const app = new Hono<{ Bindings: Bindings }>();
 
-app.get("/healthz", (c) => c.text("ok"));
+app.get("/", (c) => c.env.ASSETS.fetch(new Request(new URL("/index.html", c.req.url))));
+app.get("/healthz",(c) => c.text("ok"));
 app.get("/version", (c) => c.text(c.env.BUILD_SHA || "dev"));
 
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
